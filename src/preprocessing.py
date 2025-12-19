@@ -58,9 +58,16 @@ class ImagePreprocessor:
         
         logger.info(f"输入图像尺寸: {gray.shape}")
         
-        # 步骤1：自适应二值化
-        binary = self.sauvola_binarization(gray)
-        logger.info("完成自适应二值化")
+        # 步骤1：二值化（根据图像尺寸选择合适的方法）
+        min_dim = min(gray.shape)
+        if min_dim <= 64:
+            # 小图像使用Otsu或简单阈值
+            binary = self.otsu_binarization(gray)
+            logger.info("完成Otsu二值化（小图像）")
+        else:
+            # 大图像使用自适应二值化
+            binary = self.sauvola_binarization(gray)
+            logger.info("完成自适应二值化")
         
         # 步骤2：去噪
         denoised = self.denoise(binary)
@@ -132,8 +139,18 @@ class ImagePreprocessor:
         binary = np.zeros_like(gray)
         binary[gray > threshold] = 255
         
-        # 反转（使前景为白色）- 假设手写内容比背景暗
-        binary = 255 - binary
+        # 自动检测前景/背景：检查边界像素判断背景颜色
+        # 如果边界主要是白色(>200)，说明是白底黑字，需要反转
+        # 如果边界主要是黑色(<50)，说明是黑底白字，不需要反转
+        border_pixels = np.concatenate([
+            gray[0, :], gray[-1, :],  # 上下边界
+            gray[:, 0], gray[:, -1]   # 左右边界
+        ])
+        border_mean = np.mean(border_pixels)
+        
+        # 如果边界平均值高（白色背景），反转图像
+        if border_mean > 127:
+            binary = 255 - binary
         
         return binary.astype(np.uint8)
     
@@ -180,19 +197,35 @@ class ImagePreprocessor:
         Otsu 自动阈值二值化（备选方法）
         
         适用于双峰直方图的图像。
+        输出格式：黑底(0)白字(255)，白色是前景/笔画，与OpenCV连通域分析兼容。
         
         Args:
             gray: 灰度图像
             
         Returns:
-            二值图像
+            二值图像（前景为白色255，背景为黑色0）
         """
-        # 高斯模糊减少噪声
-        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+        # 高斯模糊减少噪声（对小图像使用更小的核）
+        kernel_size = 3 if min(gray.shape) <= 64 else 5
+        blurred = cv2.GaussianBlur(gray, (kernel_size, kernel_size), 0)
         
         # Otsu 阈值
         _, binary = cv2.threshold(blurred, 0, 255, 
-                                  cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+                                  cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        
+        # 自动检测前景/背景：根据原图边界像素判断背景颜色
+        border_pixels = np.concatenate([
+            gray[0, :], gray[-1, :],  # 上下边界
+            gray[:, 0], gray[:, -1]   # 左右边界
+        ])
+        border_mean = np.mean(border_pixels)
+        
+        # 输出格式：黑底白字（白色255是前景）
+        # 如果输入是白底黑字（border_mean > 127），反转使前景为白色
+        # 如果输入是黑底白字（border_mean <= 127），保持不变
+        if border_mean > 127:
+            # 白底黑字，反转成黑底白字
+            binary = 255 - binary
         
         return binary
     
@@ -201,6 +234,9 @@ class ImagePreprocessor:
         去除噪声
         
         使用形态学操作和连通域分析去除噪声点。
+        
+        对于已经是干净的二值图像（如训练数据拼接），跳过形态学开运算
+        以避免损失边缘像素。
         
         Args:
             binary: 二值图像
@@ -211,6 +247,24 @@ class ImagePreprocessor:
         kernel_size = self.config.denoise_kernel_size
         min_area = self.config.min_component_area
         
+        # 检测图像是否已经是干净的二值图像（只有0和255两个值）
+        unique_vals = np.unique(binary)
+        is_clean_binary = len(unique_vals) == 2 and set(unique_vals) == {0, 255}
+        
+        if is_clean_binary:
+            # 对于干净的二值图像，只去除非常小的噪点，不做形态学开运算
+            num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(
+                binary, connectivity=8
+            )
+            
+            denoised = np.zeros_like(binary)
+            for i in range(1, num_labels):
+                area = stats[i, cv2.CC_STAT_AREA]
+                if area >= min_area:
+                    denoised[labels == i] = 255
+            return denoised
+        
+        # 对于非干净图像，使用完整的去噪流程
         # 形态学开运算（去除小噪点）
         kernel = cv2.getStructuringElement(
             cv2.MORPH_ELLIPSE, 
@@ -365,11 +419,13 @@ class ImagePreprocessor:
         
         result = binary.copy()
         
-        # 清除边界区域
-        result[:border_h, :] = 0
-        result[-border_h:, :] = 0
-        result[:, :border_w] = 0
-        result[:, -border_w:] = 0
+        # 清除边界区域（仅当边界大小>0时才清除）
+        if border_h > 0:
+            result[:border_h, :] = 0
+            result[-border_h:, :] = 0
+        if border_w > 0:
+            result[:, :border_w] = 0
+            result[:, -border_w:] = 0
         
         return result
     

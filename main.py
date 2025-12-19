@@ -90,6 +90,15 @@ class FormulaRecognitionSystem:
         }
         
         try:
+            # 获取图像尺寸
+            if len(image.shape) == 3:
+                h, w = image.shape[:2]
+            else:
+                h, w = image.shape
+            
+            # 对于小图像（如单个符号的32x32或64x64），直接识别整张图片
+            is_single_symbol = max(h, w) <= 64
+            
             # 步骤1：图像预处理
             logger.info("步骤1: 图像预处理")
             if return_intermediate:
@@ -99,9 +108,20 @@ class FormulaRecognitionSystem:
             else:
                 binary = self.preprocessor.process(image)
             
-            # 步骤2：符号分割
+            # 步骤2：符号分割（小图像跳过分割，直接作为单个符号）
             logger.info("步骤2: 符号分割")
-            symbols = self.segmenter.segment(binary)
+            if is_single_symbol:
+                # 小图像：整张图片作为一个符号
+                from src.utils import Symbol, BoundingBox
+                symbol = Symbol(
+                    image=binary,
+                    bbox=BoundingBox(0, 0, w, h)
+                )
+                symbols = [symbol]
+                logger.info(f"小图像模式：整张图片作为单个符号处理")
+            else:
+                symbols = self.segmenter.segment(binary)
+            
             result['num_symbols'] = len(symbols)
             
             if not symbols:

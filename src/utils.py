@@ -274,7 +274,17 @@ def pad_image(img: np.ndarray, target_size: Tuple[int, int],
     # 首先调整大小以适应目标尺寸
     scale = min(th / h, tw / w)
     new_h, new_w = int(h * scale), int(w * scale)
-    resized = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+    
+    # 对于二值图像（只有0和255），使用最近邻插值以保持锐利边缘
+    unique_vals = np.unique(img)
+    is_binary = len(unique_vals) <= 2 and (0 in unique_vals or 255 in unique_vals)
+    
+    if is_binary:
+        # 二值图像使用最近邻插值
+        resized = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
+    else:
+        # 灰度图像使用线性插值
+        resized = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
     
     # 创建填充后的图像
     if len(img.shape) == 3:

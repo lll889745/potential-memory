@@ -148,8 +148,10 @@ class SymbolSegmenter:
         检测根号符号
         
         根号的特征：
-        - 左侧有一个向上的钩
-        - 右侧有一条水平线
+        - 左侧有一个向上的钩（V形结构）
+        - 右侧有一条水平线（从钩顶延伸到右边界）
+        - 整体宽度远大于高度
+        - 主要分布在图像上部
         
         Args:
             comp: 连通域信息
@@ -160,24 +162,35 @@ class SymbolSegmenter:
         """
         bbox = comp['bbox']
         
+        # 根号必须是宽扁的形状（宽度应该大于高度的1.5倍以上）
+        if bbox.width < bbox.height * 1.5:
+            return False
+        
+        # 根号必须足够大
+        if bbox.width < 20 or bbox.height < 10:
+            return False
+        
         # 提取组件区域
         region = binary[bbox.y:bbox.y2, bbox.x:bbox.x2]
         h, w = region.shape
         
-        if w < 10 or h < 5:
-            return False
-        
-        # 检测左侧的钩：左侧区域的像素密度
-        hook_width = int(w * self.config.sqrt_hook_ratio)
+        # 检测左侧的钩：左侧约1/4区域
+        hook_width = max(3, int(w * self.config.sqrt_hook_ratio))
         hook_region = region[:, :hook_width]
         hook_density = np.sum(hook_region > 0) / (hook_region.size + 1)
         
-        # 检测上方的水平线
-        top_region = region[:max(1, h // 4), hook_width:]
+        # 检测上方的水平线（从钩之后开始）：上部1/4区域
+        top_height = max(1, h // 4)
+        top_region = region[:top_height, hook_width:]
         top_density = np.sum(top_region > 0) / (top_region.size + 1)
         
-        # 根号特征：有钩，有水平线
-        if hook_density > 0.1 and top_density > 0.3:
+        # 检测右侧区域应该相对空白（根号下面的内容区域）
+        right_bottom = region[top_height:, int(w * 0.3):]
+        right_bottom_density = np.sum(right_bottom > 0) / (right_bottom.size + 1)
+        
+        # 根号特征：有钩，有水平线，右下方相对空白
+        # 数字"2"右下方会有笔画，不满足这个条件
+        if hook_density > 0.15 and top_density > 0.4 and right_bottom_density < 0.2:
             return True
         
         return False
@@ -185,6 +198,11 @@ class SymbolSegmenter:
     def _detect_large_operator(self, comp: Dict, binary: np.ndarray) -> bool:
         """
         检测大型运算符（求和、积分等）
+        
+        大型运算符的特征：
+        - 尺寸明显大于普通符号
+        - 通常是高瘦的形状
+        - 具有特殊的密度分布
         
         Args:
             comp: 连通域信息
@@ -194,12 +212,18 @@ class SymbolSegmenter:
             是否为大型运算符
         """
         bbox = comp['bbox']
+        img_height = binary.shape[0]
         
-        # 大型运算符通常比较大，且宽高比接近
-        if bbox.area < 100:
+        # 大型运算符必须占据图像高度的大部分（>60%）
+        if bbox.height < img_height * 0.6:
             return False
         
-        if not (0.3 < bbox.aspect_ratio < 3.0):
+        # 大型运算符通常比较大
+        if bbox.area < 200:
+            return False
+        
+        # 求和/积分符号通常比较高瘦（高度 > 宽度 * 1.2）
+        if bbox.height < bbox.width * 1.2:
             return False
         
         # 检查是否具有典型的求和/积分形状
@@ -217,11 +241,11 @@ class SymbolSegmenter:
         bottom_density = np.sum(bottom > 0) / (bottom.size + 1)
         
         # 求和符号：上下密度较高，中间较低
-        if top_density > 0.2 and bottom_density > 0.2 and mid_density < 0.4:
+        if top_density > 0.3 and bottom_density > 0.3 and mid_density < 0.25:
             return True
         
-        # 积分符号：S 形状，中间密度高
-        if mid_density > 0.15 and bbox.aspect_ratio < 0.6:
+        # 积分符号：S 形状，中间密度高，宽高比<0.5
+        if mid_density > 0.2 and bbox.aspect_ratio < 0.5:
             return True
         
         return False
@@ -236,6 +260,7 @@ class SymbolSegmenter:
         - = 的两条线
         - % 的斜线和圆圈
         - : 的两个点
+        - 同一符号的断开笔画（水平距离很近）
         
         Args:
             components: 连通域列表
@@ -247,59 +272,102 @@ class SymbolSegmenter:
         if not components:
             return []
         
-        # 计算平均高度作为参考
+        n = len(components)
+        
+        # 计算平均高度和宽度作为参考
         avg_height = np.mean([c['bbox'].height for c in components])
+        avg_width = np.mean([c['bbox'].width for c in components])
         merge_distance = avg_height * self.config.merge_distance_threshold
         
-        # 标记已合并的组件
-        merged_flags = [False] * len(components)
-        result = []
+        # 对于小图片（高度≤64），使用更积极的合并策略
+        img_height, img_width = binary.shape
+        is_small_image = img_height <= 64
         
-        for i, comp in enumerate(components):
-            if merged_flags[i]:
-                continue
-            
-            bbox = comp['bbox']
-            merged_comp = comp.copy()
-            
-            # 检查是否有需要合并的组件
-            for j, other in enumerate(components):
-                if i == j or merged_flags[j]:
-                    continue
+        # 使用并查集来处理传递性合并
+        parent = list(range(n))
+        
+        def find(x):
+            if parent[x] != x:
+                parent[x] = find(parent[x])
+            return parent[x]
+        
+        def union(x, y):
+            px, py = find(x), find(y)
+            if px != py:
+                parent[px] = py
+        
+        # 检查所有组件对是否需要合并
+        for i in range(n):
+            for j in range(i + 1, n):
+                bbox_i = components[i]['bbox']
+                bbox_j = components[j]['bbox']
                 
-                other_bbox = other['bbox']
-                
-                # 检查合并条件
                 should_merge = False
                 
                 # 条件1：小点在大组件上方（i, j 的点）
-                if self._is_dot_above(other_bbox, bbox, avg_height):
+                if self._is_dot_above(bbox_j, bbox_i, avg_height):
+                    should_merge = True
+                elif self._is_dot_above(bbox_i, bbox_j, avg_height):
                     should_merge = True
                 
                 # 条件2：两条对齐的水平线（= 符号）
-                if self._is_aligned_horizontal_lines(bbox, other_bbox):
+                if self._is_aligned_horizontal_lines(bbox_i, bbox_j):
                     should_merge = True
                 
                 # 条件3：垂直对齐的两个点（: 符号）
-                if self._is_colon_dots(bbox, other_bbox, avg_height):
+                if self._is_colon_dots(bbox_i, bbox_j, avg_height):
                     should_merge = True
                 
                 # 条件4：% 符号的组成部分
-                if self._is_percent_parts(comp, other, components, avg_height):
+                if self._is_percent_parts(components[i], components[j], components, avg_height):
                     should_merge = True
                 
+                # 条件5：对于小图片，只合并明显属于同一符号的断开笔画
+                # 条件：水平有重叠 + 尺寸相似（都是小笔画片段）
+                if is_small_image and not should_merge:
+                    # 检查水平方向是否有重叠
+                    h_overlap = bbox_i.horizontal_overlap_ratio(bbox_j)
+                    
+                    # 检查尺寸是否相似（同一符号的断开笔画尺寸应该接近）
+                    area_ratio = min(bbox_i.area, bbox_j.area) / max(bbox_i.area, bbox_j.area)
+                    
+                    # 只有当水平有重叠，且尺寸相差不超过5倍时才合并
+                    if h_overlap > 0.3 and area_ratio > 0.2:
+                        should_merge = True
+                
                 if should_merge:
-                    merged_flags[j] = True
-                    # 合并边界框
-                    merged_comp['bbox'] = bbox.union(other_bbox)
-                    merged_comp['area'] = merged_comp['area'] + other['area']
-                    # 合并掩码
-                    merged_comp['mask'] = cv2.bitwise_or(
-                        merged_comp['mask'], other['mask']
-                    )
-            
-            merged_flags[i] = True
-            result.append(merged_comp)
+                    union(i, j)
+        
+        # 按照并查集结果分组
+        groups = {}
+        for i in range(n):
+            root = find(i)
+            if root not in groups:
+                groups[root] = []
+            groups[root].append(i)
+        
+        # 合并每个组的组件
+        result = []
+        for indices in groups.values():
+            if len(indices) == 1:
+                result.append(components[indices[0]])
+            else:
+                # 合并多个组件
+                merged_comp = components[indices[0]].copy()
+                merged_bbox = merged_comp['bbox']
+                merged_mask = merged_comp['mask'].copy()
+                merged_area = merged_comp['area']
+                
+                for idx in indices[1:]:
+                    comp = components[idx]
+                    merged_bbox = merged_bbox.union(comp['bbox'])
+                    merged_mask = cv2.bitwise_or(merged_mask, comp['mask'])
+                    merged_area += comp['area']
+                
+                merged_comp['bbox'] = merged_bbox
+                merged_comp['mask'] = merged_mask
+                merged_comp['area'] = merged_area
+                result.append(merged_comp)
         
         return result
     

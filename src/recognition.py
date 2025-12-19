@@ -92,16 +92,36 @@ class FeatureExtractor:
     
     def _normalize_image(self, image: np.ndarray) -> np.ndarray:
         """
-        标准化图像到固定大小
+        标准化图像到固定大小，并统一格式
+        
+        预处理输出格式：黑底(0)白字(255)，白色是前景（与OpenCV连通域分析兼容）
+        训练数据格式：白底(255)黑字(0)，黑色是前景
+        
+        通过检测图像格式，自动转换为训练数据格式。
         
         Args:
             image: 输入图像
             
         Returns:
-            标准化后的图像
+            标准化后的图像（统一为白底黑字格式）
         """
         target_size = self.config.symbol_size
-        return pad_image(image, target_size, pad_value=0)
+        
+        # 首先填充到目标大小
+        padded = pad_image(image, target_size, pad_value=0)
+        
+        # 检测当前图像格式：通过边界像素判断背景色
+        border_pixels = np.concatenate([
+            padded[0, :], padded[-1, :],
+            padded[:, 0], padded[:, -1]
+        ])
+        border_mean = np.mean(border_pixels)
+        
+        # 如果边界是黑色（<127），说明是黑底白字，需要反转
+        if border_mean < 127:
+            padded = 255 - padded
+        
+        return padded
     
     def _extract_geometric_features(self, image: np.ndarray) -> List[float]:
         """
