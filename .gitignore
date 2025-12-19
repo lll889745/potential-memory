@@ -1,6 +1,7 @@
 # Ignore raw dataset and training data (root-anchored)
 /data_raw/
-/data/
+/data/training
+/data/test
 
 # Optional: OS/editor clutter
 .DS_Store
