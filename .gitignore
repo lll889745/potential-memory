@@ -1,17 +1,38 @@
-# Ignore raw dataset and training data (root-anchored)
+# Ignore raw dataset and training data
 /data_raw/
-/data/training
-/data/HASYv2
+/data/training/
 
-# Optional: OS/editor clutter
-.DS_Store
-Thumbs.db
-*.swp
-.idea/
-.vscode/
+# Build outputs
 /dist/
 /build/
-/src/__pycache__/
 
-# model
-/models/
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.eggs/
+
+# Virtual environment
+.venv/
+venv/
+ENV/
+
+# IDE/Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Models (large files)
+/models/*.pkl
+
+# Logs
+*.log

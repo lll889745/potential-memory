@@ -16,30 +16,39 @@
 ## 项目结构
 
 ```
-main/
-├── src/                          # 源代码
+LaTex/
+├── src/                          # 核心源代码
 │   ├── __init__.py              # 模块初始化
 │   ├── config.py                # 配置文件（符号映射、阈值参数等）
 │   ├── utils.py                 # 工具函数
 │   ├── preprocessing.py         # 图像预处理模块
 │   ├── segmentation.py          # 符号分割模块
 │   ├── recognition.py           # 符号识别模块
-│   └── structure_analysis.py    # 结构分析与 LaTeX 生成模块
-├── tests/                        # 测试代码
-│   └── test_modules.py          # 单元测试
+│   ├── structure_analysis.py    # 结构分析与 LaTeX 生成模块
+│   └── semantic.py              # 语义理解模块
+├── tests/                        # 单元测试
+│   └── test_modules.py
 ├── examples/                     # 示例代码
-│   └── demo_usage.py            # 使用示例
+│   └── demo_usage.py
+├── scripts/                      # 工具脚本
+│   ├── create_test_images.py    # 生成测试图片
+│   ├── create_integral_sum_tests.py
+│   └── debug_*.py               # 调试脚本
 ├── models/                       # 模型文件
-│   └── model_2025_12_19_19_05.pkl  # 预训练的符号识别模型
+│   └── *.pkl                    # 预训练模型
 ├── data/                         # 数据目录
 │   ├── training/                # 训练数据
 │   └── test/                    # 测试图像
+├── data_raw/                     # 原始数据集
+│   └── HASYv2/                  # HASYv2 原始数据
+├── build_config/                 # 构建配置
+│   ├── build_gui.spec           # GUI 打包配置
+│   └── build_exe.spec           # 命令行打包配置
 ├── dist/                         # 打包输出
 │   └── 公式识别系统.exe         # Windows 可执行程序
 ├── gui.py                        # GUI 主程序
 ├── main.py                       # 命令行主程序
 ├── train_model.py                # 模型训练脚本
-├── build_gui.spec                # PyInstaller 打包配置
 ├── requirements.txt              # 依赖列表
 └── README.md                     # 项目说明
 ```
