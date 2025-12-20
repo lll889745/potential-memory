@@ -1,7 +1,7 @@
 # Ignore raw dataset and training data (root-anchored)
 /data_raw/
 /data/training
-/data/test
+/data/HASYv2
 
 # Optional: OS/editor clutter
 .DS_Store
