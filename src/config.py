@@ -81,16 +81,16 @@ class StructureConfig:
     """结构分析配置"""
     
     # 空间关系判定阈值
-    superscript_y_threshold: float = 0.15  # 上标 y 偏移阈值（降低以更容易检测上标）
-    subscript_y_threshold: float = 0.15  # 下标 y 偏移阈值（降低以更容易检测下标）
-    script_size_ratio: float = 0.85  # 上下标尺寸比例阈值（提高以允许更大的上下标）
-    vertical_overlap_threshold: float = 0.3  # 垂直重叠阈值（降低以更宽松）
+    superscript_y_threshold: float = 0.25  # 上标 y 偏移阈值（提高以减少误检）
+    subscript_y_threshold: float = 0.25  # 下标 y 偏移阈值（提高以减少误检）
+    script_size_ratio: float = 0.75  # 上下标尺寸比例阈值（降低要求上下标必须明显偏小）
+    vertical_overlap_threshold: float = 0.4  # 垂直重叠阈值
     
     # 上下标水平距离限制
-    script_max_horizontal_distance: float = 2.5  # 上下标最大水平距离（相对于基础符号宽度）
+    script_max_horizontal_distance: float = 2.0  # 上下标最大水平距离（相对于基础符号宽度）
     
     # 分数识别
-    fraction_gap_threshold: float = 0.3  # 分数上下间距阈值（提高以更容易识别分数）
+    fraction_gap_threshold: float = 0.3  # 分数上下间距阈值
     fraction_line_vertical_tolerance: float = 2.0  # 分数线垂直关联容差
     
     # 根号识别
@@ -179,13 +179,19 @@ SYMBOL_TO_LATEX: Dict[str, str] = {
     'prime': r"'", 'dprime': r"''",
     'dag': r'\dag', 'ddag': r'\ddag',
     
-    # 数集符号（黑板粗体）
+    # 数集符号（黑板粗体 mathbb）
     'mathbb{N}': r'\mathbb{N}', 'mathbb{Z}': r'\mathbb{Z}',
     'mathbb{Q}': r'\mathbb{Q}', 'mathbb{R}': r'\mathbb{R}',
     'mathbb{C}': r'\mathbb{C}', 'mathbb{H}': r'\mathbb{H}',
     'mathbb{1}': r'\mathbb{1}',
     
-    # 花体字母
+    # 双线体 (mathds / dsfont)
+    'mathds{1}': r'\mathds{1}', 'mathds{C}': r'\mathds{C}',
+    'mathds{E}': r'\mathds{E}', 'mathds{N}': r'\mathds{N}',
+    'mathds{P}': r'\mathds{P}', 'mathds{Q}': r'\mathds{Q}',
+    'mathds{R}': r'\mathds{R}', 'mathds{Z}': r'\mathds{Z}',
+    
+    # 花体字母 (mathcal)
     'mathcal{A}': r'\mathcal{A}', 'mathcal{B}': r'\mathcal{B}',
     'mathcal{C}': r'\mathcal{C}', 'mathcal{D}': r'\mathcal{D}',
     'mathcal{E}': r'\mathcal{E}', 'mathcal{F}': r'\mathcal{F}',
@@ -194,6 +200,19 @@ SYMBOL_TO_LATEX: Dict[str, str] = {
     'mathcal{N}': r'\mathcal{N}', 'mathcal{O}': r'\mathcal{O}',
     'mathcal{P}': r'\mathcal{P}', 'mathcal{R}': r'\mathcal{R}',
     'mathcal{S}': r'\mathcal{S}', 'mathcal{T}': r'\mathcal{T}',
+    'mathcal{U}': r'\mathcal{U}', 'mathcal{X}': r'\mathcal{X}',
+    'mathcal{Z}': r'\mathcal{Z}',
+    
+    # 哥特体 (mathfrak)
+    'mathfrak{A}': r'\mathfrak{A}', 'mathfrak{M}': r'\mathfrak{M}',
+    'mathfrak{S}': r'\mathfrak{S}', 'mathfrak{X}': r'\mathfrak{X}',
+    
+    # 手写体 (mathscr)
+    'mathscr{A}': r'\mathscr{A}', 'mathscr{C}': r'\mathscr{C}',
+    'mathscr{D}': r'\mathscr{D}', 'mathscr{E}': r'\mathscr{E}',
+    'mathscr{F}': r'\mathscr{F}', 'mathscr{H}': r'\mathscr{H}',
+    'mathscr{L}': r'\mathscr{L}', 'mathscr{P}': r'\mathscr{P}',
+    'mathscr{S}': r'\mathscr{S}',
     
     # 集合符号
     'in': r'\in', 'notin': r'\notin', 'ni': r'\ni',

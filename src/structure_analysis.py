@@ -279,23 +279,26 @@ class StructureAnalyzer:
         vertical_position = (target_bottom - bbox_a.y) / max(bbox_a.height, 1)
         
         # 条件1：目标符号底部在基准符号上半部分（传统上标）
+        # 必须同时满足：底部在上60%区域 + 中心明显偏上 + 尺寸偏小
         is_traditional_superscript = (
-            vertical_position < 0.7 and  # 底部在上70%区域
-            dy < 0  # 中心在上方
+            vertical_position < 0.6 and  # 底部在上60%区域
+            dy < -bbox_a.height * 0.15 and  # 中心明显在上方
+            size_ratio < 0.9  # 尺寸需要偏小
         )
         
-        # 条件2：目标符号明显偏小且在右上方向偏移（允许稍大的上标）
+        # 条件2：目标符号明显偏小且在右上方向偏移
         is_small_superscript = (
             dy < -self.config.superscript_y_threshold * bbox_a.height and
             size_ratio < self.config.script_size_ratio and
             dx > 0
         )
         
-        # 条件3：目标符号顶部明显高于基准符号（即使大小接近）
+        # 条件3：目标符号顶部明显高于基准符号（必须尺寸偏小）
         is_elevated = (
-            bbox_b.y < bbox_a.y - bbox_a.height * 0.1 and
+            bbox_b.y < bbox_a.y - bbox_a.height * 0.15 and  # 顶部明显更高
             dx > 0 and
-            norm_h_gap < max_h_distance * 0.5  # 距离较近
+            size_ratio < 0.85 and  # 必须尺寸偏小
+            norm_h_gap < max_h_distance * 0.5
         )
         
         return is_traditional_superscript or is_small_superscript or is_elevated
@@ -342,9 +345,11 @@ class StructureAnalyzer:
         vertical_position = (target_top - bbox_a.y) / max(bbox_a.height, 1)
         
         # 条件1：目标符号顶部在基准符号下半部分（传统下标）
+        # 必须同时满足：顶部在下60%区域 + 中心明显偏下 + 尺寸偏小
         is_traditional_subscript = (
-            vertical_position > 0.3 and  # 顶部在下70%区域
-            dy > 0  # 中心在下方
+            vertical_position > 0.4 and  # 顶部在下60%区域
+            dy > bbox_a.height * 0.15 and  # 中心明显在下方
+            size_ratio < 0.9  # 尺寸需要偏小
         )
         
         # 条件2：目标符号明显偏小且在右下方向偏移
@@ -354,10 +359,11 @@ class StructureAnalyzer:
             dx > 0
         )
         
-        # 条件3：目标符号底部明显低于基准符号
+        # 条件3：目标符号底部明显低于基准符号（必须尺寸偏小）
         is_lowered = (
-            bbox_b.y2 > bbox_a.y2 + bbox_a.height * 0.1 and
+            bbox_b.y2 > bbox_a.y2 + bbox_a.height * 0.15 and  # 底部明显更低
             dx > 0 and
+            size_ratio < 0.85 and  # 必须尺寸偏小
             norm_h_gap < max_h_distance * 0.5
         )
         
@@ -911,6 +917,13 @@ class StructureAnalyzer:
         # 检查是否在映射表中
         if symbol in SYMBOL_TO_LATEX:
             return SYMBOL_TO_LATEX[symbol]
+        
+        # 处理 mathXXX{Y} 格式的符号（如 mathds{N}, mathfrak{A} 等）
+        import re
+        math_pattern = re.match(r'^(math[a-z]+)\{(.+)\}$', symbol)
+        if math_pattern:
+            cmd, arg = math_pattern.groups()
+            return f'\\{cmd}{{{arg}}}'
         
         # 单个字符直接返回
         if len(symbol) == 1:

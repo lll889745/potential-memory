@@ -15,6 +15,13 @@ import numpy as np
 import threading
 import logging
 import traceback
+import io
+
+# matplotlib 用于 LaTeX 渲染
+import matplotlib
+matplotlib.use('Agg')  # 使用非交互式后端
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 
 # 设置基础路径（支持PyInstaller打包）
 def get_base_path():
@@ -161,16 +168,20 @@ class FormulaRecognizerGUI:
         self.latex_text.pack(fill=tk.X)
         self.latex_text.config(state=tk.DISABLED)
         
-        # 公式预览（使用大字体显示）
+        # 公式预览（使用 matplotlib 渲染 LaTeX）
         preview_frame = ttk.LabelFrame(right_frame, text="公式预览", padding="5")
         preview_frame.pack(fill=tk.X, pady=5)
         
-        self.preview_label = ttk.Label(
-            preview_frame, text="", 
-            font=('Cambria Math', 24),
-            anchor=tk.CENTER
+        # 使用 Canvas 显示渲染后的公式图片
+        self.preview_canvas = tk.Canvas(
+            preview_frame, 
+            height=80, 
+            bg='white',
+            highlightthickness=1,
+            highlightbackground='#ddd'
         )
-        self.preview_label.pack(fill=tk.X, pady=10)
+        self.preview_canvas.pack(fill=tk.X, pady=5)
+        self.preview_image = None  # 保持对图片的引用
         
         # 语义分析结果
         semantic_frame = ttk.LabelFrame(right_frame, text="语义分析", padding="5")
@@ -472,87 +483,8 @@ class FormulaRecognizerGUI:
         self.latex_text.insert('1.0', latex if latex else "(未识别到公式)")
         self.latex_text.config(state=tk.DISABLED)
         
-        # 显示预览（替换LaTeX符号为Unicode）
-        preview = latex if latex else ""
-        replacements = {
-            # 希腊字母（小写）
-            '\\alpha': 'α', '\\beta': 'β', '\\gamma': 'γ', '\\delta': 'δ',
-            '\\epsilon': 'ε', '\\zeta': 'ζ', '\\eta': 'η', '\\theta': 'θ',
-            '\\iota': 'ι', '\\kappa': 'κ', '\\lambda': 'λ', '\\mu': 'μ',
-            '\\nu': 'ν', '\\xi': 'ξ', '\\pi': 'π', '\\rho': 'ρ',
-            '\\sigma': 'σ', '\\tau': 'τ', '\\upsilon': 'υ', '\\phi': 'φ',
-            '\\chi': 'χ', '\\psi': 'ψ', '\\omega': 'ω',
-            # 希腊字母（大写）
-            '\\Gamma': 'Γ', '\\Delta': 'Δ', '\\Theta': 'Θ', '\\Lambda': 'Λ',
-            '\\Xi': 'Ξ', '\\Pi': 'Π', '\\Sigma': 'Σ', '\\Upsilon': 'Υ',
-            '\\Phi': 'Φ', '\\Psi': 'Ψ', '\\Omega': 'Ω',
-            # 运算符
-            '\\times': '×', '\\div': '÷', '\\pm': '±', '\\mp': '∓',
-            '\\cdot': '·', '\\ast': '∗', '\\star': '★', '\\circ': '∘',
-            '\\bullet': '•', '\\oplus': '⊕', '\\ominus': '⊖', '\\otimes': '⊗',
-            '\\odot': '⊙', '\\oslash': '⊘',
-            # 关系符号
-            '\\leq': '≤', '\\geq': '≥', '\\neq': '≠',
-            '\\leqslant': '⩽', '\\geqslant': '⩾',
-            '\\lesssim': '≲', '\\gtrsim': '≳',
-            '\\ll': '≪', '\\gg': '≫',
-            '\\approx': '≈', '\\equiv': '≡', '\\sim': '∼', '\\simeq': '≃',
-            '\\cong': '≅', '\\doteq': '≐',
-            '\\prec': '≺', '\\succ': '≻', '\\preceq': '⪯', '\\succeq': '⪰',
-            # 逻辑符号
-            '\\forall': '∀', '\\exists': '∃',
-            '\\neg': '¬', '\\lnot': '¬',
-            '\\land': '∧', '\\lor': '∨', '\\wedge': '∧', '\\vee': '∨',
-            '\\implies': '⟹', '\\iff': '⟺',
-            '\\top': '⊤', '\\bot': '⊥',
-            '\\therefore': '∴', '\\because': '∵',
-            # 特殊符号
-            '\\infty': '∞', '\\partial': '∂', '\\nabla': '∇',
-            '\\sum': '∑', '\\prod': '∏', '\\coprod': '∐',
-            '\\int': '∫', '\\oint': '∮', '\\iint': '∬', '\\iiint': '∭',
-            '\\sqrt': '√', '\\surd': '√',
-            '\\hbar': 'ℏ', '\\ell': 'ℓ', '\\wp': '℘', '\\Re': 'ℜ', '\\Im': 'ℑ',
-            '\\aleph': 'ℵ',
-            # 数集符号
-            '\\mathbb{N}': 'ℕ', '\\mathbb{Z}': 'ℤ', '\\mathbb{Q}': 'ℚ',
-            '\\mathbb{R}': 'ℝ', '\\mathbb{C}': 'ℂ', '\\mathbb{H}': 'ℍ',
-            # 集合符号
-            '\\in': '∈', '\\notin': '∉', '\\ni': '∋',
-            '\\subset': '⊂', '\\supset': '⊃',
-            '\\subseteq': '⊆', '\\supseteq': '⊇',
-            '\\subsetneq': '⊊', '\\supsetneq': '⊋',
-            '\\cup': '∪', '\\cap': '∩',
-            '\\bigcup': '⋃', '\\bigcap': '⋂',
-            '\\emptyset': '∅', '\\varnothing': '∅',
-            '\\setminus': '∖',
-            # 箭头
-            '\\rightarrow': '→', '\\leftarrow': '←', '\\leftrightarrow': '↔',
-            '\\Rightarrow': '⇒', '\\Leftarrow': '⇐', '\\Leftrightarrow': '⇔',
-            '\\longrightarrow': '⟶', '\\longleftarrow': '⟵',
-            '\\Longrightarrow': '⟹', '\\Longleftarrow': '⟸', '\\Longleftrightarrow': '⟺',
-            '\\mapsto': '↦', '\\longmapsto': '⟼',
-            '\\uparrow': '↑', '\\downarrow': '↓', '\\updownarrow': '↕',
-            '\\Uparrow': '⇑', '\\Downarrow': '⇓', '\\Updownarrow': '⇕',
-            '\\nearrow': '↗', '\\searrow': '↘', '\\nwarrow': '↖', '\\swarrow': '↙',
-            # 点号
-            '\\dots': '…', '\\cdots': '⋯', '\\ldots': '…',
-            '\\vdots': '⋮', '\\ddots': '⋱',
-            # 括号
-            '\\langle': '⟨', '\\rangle': '⟩',
-            '\\lfloor': '⌊', '\\rfloor': '⌋',
-            '\\lceil': '⌈', '\\rceil': '⌉',
-            '\\{': '{', '\\}': '}',
-            '\\|': '‖',
-            # 杂项
-            '\\checkmark': '✓', '\\lightning': '⚡',
-            '\\diamond': '◇', '\\diamondsuit': '♦',
-            '\\heartsuit': '♥', '\\clubsuit': '♣', '\\spadesuit': '♠',
-            '\\angle': '∠', '\\perp': '⊥', '\\parallel': '∥',
-            '\\degree': '°',
-        }
-        for old, new in replacements.items():
-            preview = preview.replace(old, new)
-        self.preview_label.config(text=preview)
+        # 使用 matplotlib 渲染 LaTeX 公式
+        self._render_latex_preview(latex if latex else "")
         
         # 显示语义分析
         self.semantic_text.config(state=tk.NORMAL)
@@ -618,6 +550,105 @@ class FormulaRecognizerGUI:
         
         self._update_status(f"识别完成: {latex}")
     
+    def _render_latex_preview(self, latex: str):
+        """使用 matplotlib 渲染 LaTeX 公式"""
+        # 清除旧内容
+        self.preview_canvas.delete('all')
+        
+        if not latex or latex.strip() == "":
+            self.preview_canvas.create_text(
+                self.preview_canvas.winfo_width() // 2 or 200, 40,
+                text="(无公式)",
+                font=('Microsoft YaHei', 12),
+                fill='#888'
+            )
+            return
+        
+        try:
+            # 预处理 LaTeX 以兼容 matplotlib
+            # matplotlib 不支持某些 LaTeX 命令，需要转换
+            display_latex = latex
+            
+            # 替换不支持的命令
+            unsupported_replacements = {
+                r'\mathds': r'\mathbb',  # mathds 用 mathbb 替代
+                r'\mathscr': r'\mathcal',  # mathscr 用 mathcal 替代
+                r'\mathfrak': r'\mathrm',  # mathfrak 简化为 mathrm
+            }
+            for old, new in unsupported_replacements.items():
+                display_latex = display_latex.replace(old, new)
+            
+            # 创建图形
+            fig = plt.figure(figsize=(6, 1), dpi=100)
+            fig.patch.set_facecolor('white')
+            
+            # 渲染 LaTeX
+            fig.text(0.5, 0.5, f'${display_latex}$', 
+                    fontsize=20, 
+                    ha='center', va='center',
+                    transform=fig.transFigure)
+            
+            # 转换为图片
+            canvas_agg = FigureCanvasAgg(fig)
+            canvas_agg.draw()
+            
+            # 获取图片数据
+            buf = canvas_agg.buffer_rgba()
+            width, height = fig.canvas.get_width_height()
+            img_array = np.asarray(buf).reshape(height, width, 4)
+            
+            # 转换为 PIL Image
+            pil_image = Image.fromarray(img_array[:, :, :3])  # 只取 RGB
+            
+            # 裁剪白边
+            pil_image = self._trim_whitespace(pil_image)
+            
+            # 调整大小以适应画布
+            canvas_height = 70
+            if pil_image.height > 0:
+                scale = canvas_height / pil_image.height
+                new_width = int(pil_image.width * scale)
+                pil_image = pil_image.resize((new_width, canvas_height), Image.Resampling.LANCZOS)
+            
+            # 转换为 Tkinter 可用的格式
+            self.preview_image = ImageTk.PhotoImage(pil_image)
+            
+            # 在画布上显示
+            canvas_width = self.preview_canvas.winfo_width() or 400
+            self.preview_canvas.create_image(
+                canvas_width // 2, 40,
+                image=self.preview_image,
+                anchor=tk.CENTER
+            )
+            
+            plt.close(fig)
+            
+        except Exception as e:
+            logger.warning(f"LaTeX 渲染失败: {e}")
+            # 渲染失败时显示原始文本
+            self.preview_canvas.create_text(
+                self.preview_canvas.winfo_width() // 2 or 200, 40,
+                text=latex,
+                font=('Consolas', 14),
+                fill='#333'
+            )
+    
+    def _trim_whitespace(self, image: Image.Image) -> Image.Image:
+        """裁剪图片周围的白边"""
+        # 转换为灰度图
+        gray = image.convert('L')
+        # 获取边界框
+        bbox = gray.getbbox()
+        if bbox:
+            # 添加一点边距
+            padding = 10
+            left = max(0, bbox[0] - padding)
+            top = max(0, bbox[1] - padding)
+            right = min(image.width, bbox[2] + padding)
+            bottom = min(image.height, bbox[3] + padding)
+            return image.crop((left, top, right, bottom))
+        return image
+
     def _show_error(self, error):
         """显示错误"""
         # 也显示部分结果
@@ -660,7 +691,9 @@ class FormulaRecognizerGUI:
         self.latex_text.delete('1.0', tk.END)
         self.latex_text.config(state=tk.DISABLED)
         
-        self.preview_label.config(text="")
+        # 清除预览画布
+        self.preview_canvas.delete('all')
+        self.preview_image = None
         
         self.semantic_text.config(state=tk.NORMAL)
         self.semantic_text.delete('1.0', tk.END)
